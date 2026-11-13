@@ -160,12 +160,23 @@ api.post("/checkout", requireUser, async (req, res) => {
   const data = load();
   const lines = [];
   for (const item of items) {
+    // BUG-03: validate each line item before using it. A non-object item (e.g. null) used to throw here
+    // and crash the whole server (unhandled rejection in this async handler).
+    if (!item || typeof item !== "object") {
+      res.status(400).json({ error: "Invalid cart item." });
+      return;
+    }
     const product = data.products.find((p) => p.id === Number(item.productId));
     if (!product) {
       res.status(400).json({ error: "One of the products no longer exists." });
       return;
     }
-    const quantity = Number(item.quantity);
+    // BUG-03: only positive integers are valid quantities (rejects negative, zero, decimal and non-numeric values).
+    const quantity = item.quantity;
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      res.status(400).json({ error: "Each quantity must be a whole number of at least 1." });
+      return;
+    }
     lines.push({ productId: product.id, name: product.name, price: product.price, quantity });
   }
 

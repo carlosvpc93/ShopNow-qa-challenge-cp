@@ -6,7 +6,7 @@ Sorted by priority (most important first). All bugs were reproduced on a fresh i
 |---|---|---|---|---|
 | BUG-01 | Payment shown as failed but the customer is charged (and can be charged twice) | Critical | P1 | Report 1 |
 | BUG-02 | Any logged-in user can read any other user's order (IDOR) | Critical | P1 | Found by me |
-| BUG-03 | Checkout accepts invalid quantities: negative/zero totals and corrupted stock | Critical | P1 | Found by me |
+| BUG-03 | Checkout accepts invalid quantities: negative/zero totals and corrupted stock ✅ fixed | Critical | P1 | Found by me |
 | BUG-04 | Stock is not enforced: overselling and negative stock | High | P1 | Found by me |
 | BUG-05 | Lowercase coupon code is accepted but gives 0% discount | High | P1 | Report 2 |
 | BUG-06 | More than one coupon can be applied to the same purchase | High | P2 | Found by me |
@@ -74,9 +74,11 @@ Sorted by priority (most important first). All bugs were reproduced on a fresh i
   - `0` → `201` order with total $0.00.
   - `0.5` → `201`, half a T-shirt for $7.17.
   - `"abc"` → `201` with `total: null`, and the product's `stock` becomes **`null`**. The catalog then shows the T-shirt as "Out of stock" for everyone.
+  - Found while fixing: `items: [null]` (any non-object line item) throws `TypeError: Cannot read properties of null (reading 'productId')` inside the async handler. The rejection is unhandled, so **the whole server process crashes** and ShopNow is down for every user. Any logged-in user can do this with one request.
 - **Evidence:** `HTTP201 … "subtotal":-25.05,"total":-25.05`; `quantity "abc"` → `"total":null`, then `GET /products/3` → `"stock":null`.
-- **Automated test:** `tests/api/checkout.api.spec.ts` → `[BUG-03][API] …` (negative, zero, decimal, non-numeric)
-- **Root cause in the code:** `app/server/api.ts`, `/checkout` does `const quantity = Number(item.quantity)` with no validation (integer ≥ 1), then `product.stock -= line.quantity` with the bad value.
+- **Automated test:** `tests/api/checkout.api.spec.ts` → `[BUG-03][API] …` (negative, zero, decimal, non-numeric). The malformed-item crash is **verified manually** and not automated on purpose: on the unfixed build it would kill the shared app server, so every test that runs after it would fail for an unrelated reason.
+- **Root cause in the code:** `app/server/api.ts`, `/checkout` trusts the shape of `items`. It reads `item.productId` without checking that `item` is an object (so it crashes on `null`), and it does `const quantity = Number(item.quantity)` with no validation (integer ≥ 1). The bad value then goes into the totals and into `product.stock -= line.quantity`. Secondary cause of the crash: Express 4 doesn't catch errors thrown in `async` handlers.
+- **Status: fixed** (commit `fix(BUG-03)`). `/checkout` now rejects with `400`, before any payment or stock change, (a) any line item that isn't an object (`"Invalid cart item."`) and (b) any quantity that isn't an integer ≥ 1 (numeric strings like `"2"` included: the documented contract uses numbers). Kept to the API on purpose (highest ROI): the server is the single gate every client goes through, and the UI already only sends valid integers (select 1–10, cart input clamped to ≥ 1). The 4 `[BUG-03]` tests now pass. The rest of the suite is unchanged (the other 18 bug tests still fail, valid checkouts still return `201` and decrement stock 25 → 23). `items:[null]` now returns `400` and the server stays up. *Recommended follow-up (not done):* an error-handling wrapper for async routes, so an unexpected error returns 500 instead of crashing the process.
 
 ---
 

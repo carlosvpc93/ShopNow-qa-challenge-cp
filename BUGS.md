@@ -9,7 +9,7 @@ Sorted by priority (most important first). All bugs were reproduced on a fresh i
 | BUG-03 | Checkout accepts invalid quantities: negative/zero totals and corrupted stock ✅ fixed | Critical | P1 | Found by me |
 | BUG-04 | Stock is not enforced: overselling and negative stock | High | P1 | Found by me |
 | BUG-05 | Lowercase coupon code is accepted but gives 0% discount | High | P1 | Report 2 |
-| BUG-06 | More than one coupon can be applied to the same purchase | High | P2 | Found by me |
+| BUG-06 | More than one coupon can be applied to the same purchase ✅ fixed | High | P2 | Found by me |
 | BUG-07 | Products added with the catalog "Add" button disappear on reload | High | P2 | Report 3 |
 | BUG-08 | Line totals are rounded down: totals off by one cent | Medium | P2 | Found by me |
 | BUG-09 | Order date shows the next day for orders placed after 21:00 Argentina time | Medium | P2 | Found by me |
@@ -138,6 +138,10 @@ Sorted by priority (most important first). All bugs were reproduced on a fresh i
 - **Evidence:** UI `coupon-applied` count = 2. API `"subtotal":14.35,"discount":3.59,"total":10.76`.
 - **Automated test:** `tests/api/checkout.api.spec.ts` → `[BUG-06][API] …`, `tests/ui/cart.spec.ts` → `[BUG-06][UI] …`
 - **Root cause in the code:** `app/web/src/cart.tsx` keeps the "one coupon" flag in `couponAppliedRef` (memory only, starts `false` on every load) instead of checking the persisted `coupons.length`. `app/server/api.ts` `/checkout` loops over every code in `coupons` without limiting to one.
+- **Status: fixed** (commit `fix(BUG-06)`). Both root causes are fixed, because the rule must hold in the UI and on the server:
+  - `app/web/src/cart.tsx`: removed `couponAppliedRef`. `applyCoupon` now checks the persisted state (`coupons.length > 0`), so the rule survives reloads, and it stores `[coupon]` instead of appending. This also fixes a related stale-flag case: after emptying the cart, the flag stayed `true` without any coupon applied.
+  - `app/server/api.ts` `/checkout`: more than one code (different or repeated) → `400 "Only one coupon can be used per purchase."`. This closes the API bypass.
+  - Verified: the 3 `[BUG-06]` tests pass. Single coupon still works (FLOCK10 on $14.35 → $12.91). Unknown code still returns 400. In the UI, remove → apply another coupon still works (spec flow), and so does empty cart → re-add → apply. The other 15 bug tests still fail as expected (no regression).
 
 ---
 

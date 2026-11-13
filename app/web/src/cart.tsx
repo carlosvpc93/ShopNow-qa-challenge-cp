@@ -49,7 +49,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const initial = useRef(readStoredCart()).current;
   const [items, setItems] = useState<CartItem[]>(initial.items);
   const [coupons, setCoupons] = useState<Coupon[]>(initial.coupons);
-  const couponAppliedRef = useRef(false);
 
   const persist = (nextItems: CartItem[], nextCoupons: Coupon[]) => {
     setItems(nextItems);
@@ -76,21 +75,18 @@ export function CartProvider({ children }: { children: ReactNode }) {
   };
 
   const applyCoupon = async (code: string) => {
-    if (couponAppliedRef.current) {
+    if (coupons.length > 0) {
       throw new Error("Only one coupon can be used per purchase.");
     }
     const coupon = await api<Coupon>("/coupons/validate", { method: "POST", body: { code } });
-    couponAppliedRef.current = true;
-    persist(items, [...coupons, coupon]);
+    persist(items, [coupon]);
   };
 
   const removeCoupon = (code: string) => {
-    couponAppliedRef.current = false;
     persist(items, coupons.filter((c) => c.code !== code));
   };
 
   const clear = () => {
-    couponAppliedRef.current = false;
     persist([], []);
   };
 
